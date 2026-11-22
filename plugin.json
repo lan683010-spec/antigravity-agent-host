@@ -1,0 +1,12 @@
+{
+  "name": "agent-host",
+  "displayName": "Agent Host (Multi-Agent Orchestrator)",
+  "version": "1.0.0",
+  "description": "Codex-Host style multi-agent orchestrator for Antigravity. Command and monitor OpenAI Codex CLI, Cursor CLI, Claude Code, Gemini CLI, and custom agents with live execution streams and git diff review.",
+  "logo": "assets/logo.svg",
+  "suggestedPrompts": [
+    "Open the Agent Host dashboard and check the health status of Codex, Cursor, and Claude",
+    "Dispatch a read-only code review task to Codex and show me the live execution stream",
+    "Run Codex and Cursor in parallel to analyze this repository and compare their findings"
+  ]
+}

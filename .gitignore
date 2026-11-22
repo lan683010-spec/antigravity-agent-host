@@ -1,0 +1,13 @@
+# Local agent runtime data and machine-specific configuration
+.agent-runs/
+runs_roots.json
+custom_agents.json
+
+# Python caches and bytecode
+__pycache__/
+*.py[cod]
+
+# Logs and operating system metadata
+*.log
+.DS_Store
+Thumbs.db

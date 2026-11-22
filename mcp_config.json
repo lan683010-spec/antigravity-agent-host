@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "orchestrator": {
+      "command": "python",
+      "args": [
+        "-X",
+        "utf8",
+        "-u",
+        "${PLUGIN_ROOT}/bin/agent_host_mcp.py",
+        "--plugin-root",
+        "${PLUGIN_ROOT}",
+        "--data-dir",
+        "${PLUGIN_DATA}"
+      ],
+      "env": {
+        "PYTHONUTF8": "1",
+        "PYTHONIOENCODING": "utf-8"
+      }
+    }
+  }
+}

@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Agent Host (Codex-Host for Antigravity)</title>
+<style>
+  :root {
+    --bg-primary: var(--color-background-primary, #0f172a);
+    --bg-secondary: var(--color-background-secondary, #1e293b);
+    --bg-tertiary: var(--color-background-tertiary, #334155);
+    --text-primary: var(--color-text-primary, #f8fafc);
+    --text-secondary: var(--color-text-secondary, #94a3b8);
+    --border-color: var(--color-border-primary, #334155);
+    --accent: #38bdf8;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --purple: #a855f7;
+    --font: var(--font-sans, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .app-shell {
+    display: flex;
+    flex-direction: column;
+    min-height: 460px;
+    max-height: 100vh;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 14px;
+  }
+  .brand-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+  }
+  .health-pills {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+  }
+  .pill.ok { border-color: rgba(16, 185, 129, 0.5); color: #34d399; }
+  .pill.missing { opacity: 0.6; }
+  .workspace-grid {
+    display: grid;
+    grid-template-columns: 230px 1fr;
+    flex: 1;
+    min-height: 390px;
+    overflow: hidden;
+  }
+  @media (max-width: 640px) {
+    .workspace-grid { grid-template-columns: 1fr; }
+  }
+  .sidebar {
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border-color);
+    overflow-y: auto;
+    max-height: 540px;
+  }
+  .sidebar-header {
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .task-item {
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .task-item:hover { background: rgba(56, 189, 248, 0.08); }
+  .task-item.active {
+    background: rgba(56, 189, 248, 0.15);
+    border-left: 3px solid var(--accent);
+  }
+  .task-row-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  .agent-badge {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(56, 189, 248, 0.18);
+    color: var(--accent);
+  }
+  .agent-badge.codex { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+  .agent-badge.cursor { background: rgba(56, 189, 248, 0.2); color: #38bdf8; }
+  .agent-badge.claude { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+  .status-badge {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+  .status-badge.running { background: rgba(56, 189, 248, 0.2); color: #38bdf8; }
+  .status-badge.completed { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+  .status-badge.failed, .status-badge.timeout { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+  .status-badge.cancelled { background: rgba(148, 163, 184, 0.2); color: #94a3b8; }
+  .task-snippet {
+    font-size: 12px;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .task-id-sub {
+    font-size: 10px;
+    font-family: var(--mono);
+    color: var(--text-secondary);
+    margin-top: 2px;
+  }
+  .main-pane {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .tabs {
+    display: flex;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    padding: 0 10px;
+    gap: 4px;
+    align-items: center;
+  }
+  .tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    padding: 9px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+  }
+  .tab-btn.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .tab-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 6px;
+  }
+  .btn {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn.danger { background: rgba(239, 68, 68, 0.2); color: #f87171; border-color: rgba(239, 68, 68, 0.4); }
+  .tab-content {
+    flex: 1;
+    padding: 12px 14px;
+    overflow-y: auto;
+    max-height: 490px;
+  }
+  .card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+  }
+  .card-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+  }
+  .kv-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 8px;
+    font-size: 12px;
+  }
+  .kv-item span {
+    color: var(--text-secondary);
+    font-size: 11px;
+    display: block;
+  }
+  .kv-item code {
+    font-family: var(--mono);
+    font-size: 11px;
+    word-break: break-all;
+  }
+  pre.code-box {
+    margin: 0;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.28);
+    border-radius: 6px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-x: auto;
+  }
+  .event-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .ev-item {
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    border-left: 3px solid var(--border-color);
+    font-size: 12px;
+  }
+  .ev-item.init { border-left-color: var(--accent); }
+  .ev-item.thinking { border-left-color: var(--purple); }
+  .ev-item.tool_call { border-left-color: var(--warning); }
+  .ev-item.assistant_message { border-left-color: var(--success); }
+  .ev-item.result { border-left-color: var(--success); }
+  .ev-item.error { border-left-color: var(--danger); background: rgba(239, 68, 68, 0.1); }
+  .ev-head {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+  }
+  .ev-body {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .zh-card { border: 2px solid #38bdf8; background: rgba(56,189,248,0.09); }
+  .zh-card h3 { color: #38bdf8; font-size: 15px; margin: 0 0 10px; }
+  .zh-card h4 { margin: 14px 0 6px; }
+  .zh-text, .zh-description { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.7 system-ui, sans-serif; }
+  .zh-args { padding-left: 22px; line-height: 1.65; }
+  .zh-args li { margin-bottom: 8px; overflow-wrap: anywhere; }
+  .zh-args code { opacity: 0.7; font-size: 11px; }
+  details.raw-details { margin-top: 8px; }
+  details.raw-details summary { cursor: pointer; color: var(--text-secondary); margin-bottom: 6px; }
+
+  .task-controls { padding: 8px 10px; border-bottom: 1px solid var(--border-color); }
+  .task-notice { padding-top: 6px; font-size: 11px; color: #38bdf8; white-space: normal; }
+  .task-notice.error { color: #f87171; }
+  .agent-group-header { display: flex; align-items: center; gap: 5px; padding: 8px 6px; background: var(--bg-secondary); border-bottom: 1px solid var(--border-color); }
+  .agent-group-toggle { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; flex: 1; min-width: 0; padding: 2px; border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; }
+  .agent-group-count { font-size: 11px; color: var(--text-secondary); }
+  .agent-group-running { font-size: 10px; color: #38bdf8; font-weight: 700; }
+  .task-action { flex-shrink: 0; padding: 2px 5px; font-size: 11px; }
+  .task-item { position: relative; padding-right: 38px; }
+  .task-delete { position: absolute; top: 8px; right: 6px; }
+  button:disabled { opacity: .5; cursor: wait; }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <div class="topbar">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <span>Antigravity Agent Host</span>
+      <span id="live-indicator" style="font-size:11px;font-weight:400;color:var(--text-secondary)">● Ready</span>
+    </div>
+    <div class="health-pills" id="health-bar"></div>
+  </div>
+  <div class="workspace-grid">
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <span>Dispatched Threads</span>
+        <button class="btn" id="refresh-btn" style="padding:2px 7px;font-size:10px">↻</button>
+      </div>
+      <div class="task-controls">
+        <button class="btn task-action" id="clean-tasks-btn">🗑️ 清理陈旧任务</button>
+        <div id="task-notice" class="task-notice" role="status" aria-live="polite"></div>
+      </div>
+      <div id="task-list"></div>
+    </div>
+    <div class="main-pane">
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="command">1. 主控指令 (Command)</button>
+        <button class="tab-btn" data-tab="stream">2. 实时运行流 (Live Stream)</button>
+        <button class="tab-btn" data-tab="diff">3. 代码变更 (Git Diff)</button>
+        <button class="tab-btn" data-tab="result">4. 最终产出 (Result)</button>
+        <div class="tab-actions">
+          <button class="btn danger" id="stop-btn" style="display:none">⏹ 停止运行</button>
+        </div>
+      </div>
+      <div class="tab-content" id="tab-view"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+
+  // Keep the self-contained MCP App and sidecar explanations in sync.
+  const disclosureStates = new Map();
+  function rememberDetails(container) {
+    if (!container.dataset.renderKey) return;
+    disclosureStates.set(container.dataset.renderKey,
+      [...container.querySelectorAll("details")].map(detail => detail.open));
+  }
+  function restoreDetails(container, task) {
+    const key = task.task_id + ":" + state.activeTab;
+    container.dataset.renderKey = key;
+    const saved = disclosureStates.get(key) || [];
+    container.querySelectorAll("details").forEach((detail, index) => { detail.open = !!saved[index]; });
+  }
+  const statusZh = (status) => ({pending:"等待启动",running:"正在执行",completed:"已完成",failed:"执行失败",timeout:"执行超时",cancelled:"已取消"}[status] || "状态未知");
+  const sandboxZh = (mode) => ({
+    "read-only":"🔒 只读安全模式：仅允许查看与分析代码，禁止修改任何文件",
+    "workspace-write":"✍️ 工作区读写模式：允许在项目目录内修改代码并执行测试",
+    "danger-full-access":"⚡ 完全权限模式：允许跨目录读写文件与执行系统命令"
+  }[mode] || "未记录或无法识别的权限模式：" + (mode || "未知"));
+  const turnNumber = (t) => Math.max(1, (t.turns || []).length + (t.status === "running" ? 1 : 0));
+  function currentPrompt(t) {
+    if (t.command_summary_zh && t.prompt) return t.prompt;
+    const turns = t.turns || [];
+    const dispatch = [...(state.events || [])].reverse().find(e => e.subtype === "dispatch");
+    return dispatch?.raw?.prompt || (t.status !== "running" && turns.length ? turns[turns.length - 1].prompt : t.prompt) || "未记录任务内容";
+  }
+  function explainArgv(t) {
+    const argv = t.command_argv || [];
+    const values = {
+      "-C":"将工作目录切换到", "--cwd":"指定工作目录", "--workspace":"指定项目工作目录",
+      "-o":"将最终回复保存到文件", "--output-last-message":"将最终回复保存到文件",
+      "-s":"指定沙箱权限", "--sandbox":"指定沙箱权限或开关",
+      "--resume":"恢复此前的会话", "--output-format":"指定过程输出格式",
+      "-m":"选择模型", "--model":"选择模型", "--color":"设置终端彩色输出",
+      "--output-schema":"按指定 JSON 结构返回结果", "--permission-mode":"指定操作授权模式",
+      "--approval-mode":"指定自动审批方式", "--mode":"选择执行模式",
+      "--config":"传入配置项", "--allowedTools":"指定允许使用的工具"
+    };
+    const flags = {
+      "exec":"以非交互方式执行本次任务", "resume":"在已有会话中继续处理追问",
+      "--json":"将运行事件输出成结构化数据，供界面实时展示",
+      "--approve-for-me":"由 CLI 自动处理审批，并使用工作区读写模式",
+      "--dangerously-bypass-approvals-and-sandbox":"跳过审批并关闭沙箱限制，以完全权限执行",
+      "--dangerously-skip-permissions":"跳过工具操作的权限确认",
+      "--yolo":"自动批准工具操作，具体可用权限由 CLI 配置决定",
+      "--force":"允许 CLI 无需逐项确认就执行操作",
+      "--trust":"将当前工作目录标记为可信目录",
+      "--skip-git-repo-check":"允许在未初始化 Git 的目录执行任务",
+      "--verbose":"输出更多过程细节", "--print":"以非交互方式执行并输出回复",
+      "--full-auto":"启用 CLI 自动执行模式", "-":"从标准输入读取完整任务指令",
+      "--":"后续内容按普通参数处理，不再识别为选项"
+    };
+    const valueZh = (key, value) => {
+      if (key === "-s" || key === "--sandbox") return ({enabled:"启用沙箱",disabled:"关闭沙箱"}[value] || sandboxZh(value));
+      return ({ "stream-json":"逐条实时输出 JSON 事件", json:"JSON 结构化数据", text:"普通文本",
+        never:"关闭彩色输出", plan:"仅规划和分析", acceptEdits:"自动允许编辑文件",
+        auto_edit:"自动批准编辑类操作", default:"使用 CLI 默认设置" }[value] || value);
+    };
+    let positional = false;
+    return argv.map(String).reduce((rows, token, i) => {
+      // The consumed values are represented in their option's own row.
+      if (rows.skip > i) return rows;
+      const eq = token.startsWith("--") ? token.indexOf("=") : -1;
+      const key = eq > 0 ? token.slice(0, eq) : token;
+      let explanation;
+      let shown = token;
+      if (!positional && Object.prototype.hasOwnProperty.call(values, key)) {
+        const value = eq > 0 ? token.slice(eq + 1) : argv[i + 1];
+        if (eq < 0 && value !== undefined) { rows.skip = i + 2; shown += " " + value; }
+        explanation = values[key] + "：" + (value === undefined ? "缺少参数值" : valueZh(key, String(value)));
+      } else if (!positional && key === "-p") {
+        if (t.agent === "gemini") {
+          const prompt = argv[i + 1];
+          rows.skip = i + 2;
+          explanation = "将下一项任务指令直接交给子 Agent 执行";
+          shown += prompt === undefined ? "" : " [任务指令]";
+        } else explanation = "以非交互方式执行任务并返回文本回复";
+      } else if (i === 0) explanation = "启动子 Agent 所需的可执行程序";
+      else if (!positional && flags[key]) explanation = flags[key];
+      else if (token === t.session_id) explanation = "要继续使用的原生会话编号";
+      else if (token === t.prompt || token.includes("[主控输出要求]")) {
+        shown = "[任务指令]"; explanation = "主控下达的任务正文，要求最终回复包含简体中文通俗解读";
+      } else if (/\.(?:js|mjs|cjs|py)$/i.test(token)) explanation = "加载子 Agent 的启动脚本";
+      else explanation = token.startsWith("-") ? "附加 CLI 选项，当前没有可靠的中文释义，保留原参数供核对" : "传给程序的附加值或任务正文";
+      rows.items.push({raw:shown, explanation});
+      if (token === "--") positional = true;
+      return rows;
+    }, {skip:0,items:[]}).items;
+  }
+  function commandCard(t) {
+    const fallback = "主控 Agent（" + (t.dispatcher || "Antigravity Main Agent") + "）向子 Agent " + t.agent
+      + " 下达任务：" + currentPrompt(t) + "\n当前是第 " + turnNumber(t) + " 轮会话。\n工作目录："
+      + (t.effective_cwd || t.cwd || "未记录") + "\n所选权限：" + sandboxZh(t.sandbox)
+      + "。\n通过命令行子进程执行，并实时收集运行过程和最终回复。";
+    const args = explainArgv(t);
+    return '<section class="card zh-card"><h3>🗣️ 主控命令通俗解读（简体中文）</h3><div class="zh-text">'
+      + esc(t.command_summary_zh || fallback) + '</div><h4>命令参数逐项说明</h4>'
+      + (args.length ? '<ul class="zh-args">' + args.map(a => '<li><strong>' + esc(a.explanation)
+        + '</strong><br><code>' + esc(a.raw) + '</code></li>').join("") + '</ul>' : '<p>此历史任务没有记录原始命令参数。</p>')
+      + '</section>';
+  }
+  function eventExplanation(ev) {
+    if (ev.kind !== "tool_call") {
+      const entries = {
+        init:["🚀 正在初始化子 Agent 会话", "主控已派发任务，子 Agent 正在准备执行环境并建立会话。"],
+        thinking:["🧠 正在分析任务与规划步骤", "子 Agent 正在分析已有信息，确定接下来如何处理任务。"],
+        assistant_message:["💬 子 Agent 正在汇报进展", "这是子 Agent 对当前发现或工作进度的说明。"],
+        result:["📋 已收到本轮返回结果", "子 Agent 返回了本轮结果；任务是否成功请结合最终状态与错误信息判断。"],
+        error:["❌ 执行过程中出现异常", "本次操作报告错误，请展开原始记录查看原因。"],
+        raw:["📄 收到补充运行记录", "这是尚未归类的底层输出，保留原文便于核对。"]
+      };
+      const info = entries[ev.kind] || ["📄 收到运行事件", "这条事件记录了子 Agent 的运行状态，详情见原始记录。"];
+      return ev.is_error ? ["❌ 本次操作返回错误", "该事件标记为失败，请查看原始记录中的错误原因。"] : info;
+    }
+    // Inspect tool inputs only: command output can contain unrelated command names.
+    const raw = ev.raw || {}, item = raw.item || {};
+    const content = raw.message?.content || [];
+    const block = Array.isArray(content) ? content.find(b => b.type === "tool_use") : null;
+    const cursorTool = raw.tool_call && Object.values(raw.tool_call)[0];
+    const input = item.command || block?.input || raw.parameters || raw.arguments || raw.input || cursorTool?.args || cursorTool?.input || "";
+    const command = typeof input === "string" ? input : input.command || input.cmd || "";
+    const source = [ev.tool_name || "", item.type || "", ev.text || "", command].join(" ");
+    const patterns = [
+      [/\b(remove-item|rm|del|unlink|delete_file)\b/i, "🗑️ 正在删除文件或目录", "此工具操作会移除指定内容，请结合路径和返回结果核对。"],
+      [/\b(pytest|py_compile|unittest|jest|vitest|test)\b/i, "🧪 正在运行语法检查或测试", "检查代码能否正确解析或行为是否符合预期；发起检查不等于检查通过。"],
+      [/\b(set-content|add-content|out-file|apply_patch|edit|write|write_file|edit_file|file_change|str_replace)\b|writeFile|editFile|(?:write|edit)ToolCall/i, "✏️ 正在修改/写入代码文件", "子 Agent 正在提交文件内容或补丁；是否写入成功以工具结果为准。"],
+      [/\b(get-childitem|select-string|rg|grep|find|ls|dir|glob|search|list_dir)\b|listDir|ripgrep|(?:grep|glob|ls)ToolCall/i, "🔍 正在搜索项目文件与代码", "查找目录、文件名或匹配的代码片段，为后续分析定位内容。"],
+      [/\b(get-content|cat|read|read_file|head|tail|type)\b|readFile|readToolCall/i, "📖 正在读取并查看文件内容", "读取指定文件的内容，供子 Agent 分析和理解。"],
+      [/\bgit\s+(diff|status|log|show)\b/i, "🔎 正在检查代码变更或版本记录", "查看 Git 中的改动、状态或提交历史。"],
+      [/\b(move-item|copy-item|mv|cp|rename)\b/i, "📁 正在移动或复制文件", "调整文件位置或创建副本，具体路径见原始记录。"],
+      [/\b(command_execution|shell|bash|powershell|exec_command|terminal)\b|shellTool/i, "🖥️ 正在执行终端命令", "子 Agent 调用了终端执行操作；当前没有更具体的中文分类，命令见下方。"]
+    ];
+    const matches = patterns.filter(([pattern]) => pattern.test(source));
+    const meaningful = matches.filter(m => !m[1].startsWith("🖥️"));
+    const matched = (meaningful.length ? meaningful : matches);
+    let title = matched.length ? matched.map(m => m[1]).join("；") : "🛠️ 正在调用工具";
+    let description = matched.length ? matched.map(m => m[2]).join(" ") : "子 Agent 正在使用 " + (ev.tool_name || "外部工具") + " 完成任务，详细参数见原始记录。";
+    const failed = ev.is_error || item.status === "failed" || (item.exit_code != null && item.exit_code !== 0);
+    if (failed) { title = "❌ 工具操作失败"; description = "本次工具调用报告失败。原计划：" + description; }
+    else if (/completed|finished/.test(ev.subtype || "") || item.status === "completed") {
+      title = title.replaceAll("正在", "已结束：");
+      description += " 此条是操作结束记录，具体结果请查看原文。";
+    }
+    return [title, description];
+  }
+  function replyZh(reply) {
+    if (!reply?.trim()) return "尚未收到最终回复。";
+    const match = reply.match(/【最终回复中文解读】\s*([\s\S]*?)(?:【原始详细输出】|$)/);
+    const prose = (match ? match[1] : reply).replace(/```[\s\S]*?```/g, "").trim();
+    const lines = prose.split("\n").filter(line => /[\u4e00-\u9fff]/.test(line));
+    if (lines.length) {
+      const text = lines.slice(0,8).join("\n");
+      return text.slice(0,1200) + (text.length > 1200 || lines.length > 8 ? "…（完整回复见下方）" : "");
+    }
+    const facts = [
+      [/\b(no files? (were )?(changed|modified)|no changes( made)?)\b/i,"回复表示没有修改文件。"],
+      [/\b(all tests passed|tests? (have )?passed|[1-9]\d* passed)\b/i,"回复报告有测试通过，具体范围见原始输出。"],
+      [/\b(tests? failed|[1-9]\d* failed|not all tests passed)\b/i,"回复报告有测试失败。"],
+      [/\b(permission denied|access denied)\b/i,"操作因权限不足被拒绝。"],
+      [/\b(file not found|no such file or directory)\b/i,"未找到所需文件或目录。"],
+      [/\b(timed out|timeout)\b/i,"操作超时，未能在规定时间内完成。"]
+    ].filter(([pattern, meaning]) => pattern.test(prose)
+      && !(meaning.includes("有测试通过") && /\b(not|no|never|0)\b/i.test(prose))).map(([,meaning]) => meaning);
+    return facts.length ? facts.join("") + "（根据常见返回语句提炼）"
+      : "已收到回复，但其中没有可提取的中文说明；当前离线规则无法可靠翻译这段内容，请查看下方原文。";
+  }
+  function resultCard(t) {
+    const running = ["running","pending"].includes(t.status);
+    const events = state.events || [];
+    const counts = {thinking:0,tool_call:0}, seen = new Set(), pending = new Map();
+    let turn = 0;
+    events.forEach(e => {
+      if (e.subtype === "dispatch") turn++;
+      if (!(e.kind in counts)) return;
+      const raw = e.raw || {}, id = raw.item?.id || raw.call_id || raw.tool_call_id || raw.id;
+      if (id) { const key = JSON.stringify([turn,e.kind,id]); if (seen.has(key)) return; seen.add(key); }
+      else {
+        const key = JSON.stringify([turn,e.kind,e.tool_name || null]);
+        if (["delta","updated","item.updated"].includes(e.subtype)) return;
+        if (["started","item.started"].includes(e.subtype)) pending.set(key,(pending.get(key) || 0) + 1);
+        else if (["completed","item.completed"].includes(e.subtype) && pending.get(key)) {
+          pending.set(key,pending.get(key) - 1); return;
+        }
+      }
+      counts[e.kind]++;
+    });
+    const duration = t.duration_ms == null ? "暂未记录" : (t.duration_ms / 1000).toFixed(1) + " 秒";
+    const statusBlock = (state.diff || "").split("# git status --short\n")[1]?.split("\n# ")[0];
+    const files = (statusBlock || "").trim().split("\n").filter(Boolean).map(s => s.replace(/^[ MADRCU?!]{1,2}\s+/, "").trim());
+    const fallback = "执行概况：子 Agent " + t.agent + " " + statusZh(t.status) + "；本轮耗时：" + duration
+      + "。\n当前可见事件中记录思考 " + counts.thinking + " 次、工具调用 " + counts.tool_call + " 次（有标识的事件已去重，历史记录可能不完整）。\n"
+      + (files.length ? "工作区变更文件：" + files.join("、") + "（可能含任务前已有改动）。" : "暂无可确认的文件变更记录。")
+      + (t.error ? "\n异常解读：" + replyZh(t.error) : "")
+      + "\n最终回复中文解读：" + (running ? "任务尚未结束，完成后会自动生成解读。" : replyZh(t.final_response));
+    return '<section class="card zh-card"><h3>🗣️ 最终结果通俗解读（简体中文）</h3><div class="zh-text">'
+      + esc(!running && t.result_summary_zh ? t.result_summary_zh : fallback) + '</div></section>';
+  }
+  let state = {
+    selectedTaskId: null,
+    selectedTask: null,
+    events: [],
+    diff: "",
+    tasks: [],
+    collapsedAgents: new Set(),
+    deleting: false,
+    refreshVersion: 0,
+    notice: "",
+    noticeError: false,
+    health: [],
+    activeTab: "command",
+    rpcId: 1,
+    pending: new Map(),
+    connected: false,
+  };
+
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+
+  function sendRpc(method, params = {}) {
+    const id = state.rpcId++;
+    return new Promise((resolve, reject) => {
+      state.pending.set(id, { resolve, reject });
+      window.parent.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
+      setTimeout(() => {
+        if (state.pending.has(id)) {
+          state.pending.delete(id);
+          reject(new Error("RPC timeout"));
+        }
+      }, 15000);
+    });
+  }
+
+  function sendNotification(method, params = {}) {
+    window.parent.postMessage({ jsonrpc: "2.0", method, params }, "*");
+  }
+
+  function applyThemeVars(vars) {
+    if (!vars || typeof vars !== "object") return;
+    for (const [k, v] of Object.entries(vars)) {
+      if (typeof v === "string") document.documentElement.style.setProperty(k, v);
+    }
+  }
+
+  window.addEventListener("message", (ev) => {
+    const msg = ev.data;
+    if (!msg || typeof msg !== "object" || msg.jsonrpc !== "2.0") return;
+
+    if (msg.id !== undefined && state.pending.has(msg.id)) {
+      const { resolve, reject } = state.pending.get(msg.id);
+      state.pending.delete(msg.id);
+      if (msg.error) reject(msg.error);
+      else resolve(msg.result);
+      return;
+    }
+
+    if (msg.method === "ui/notifications/tool-input") {
+      document.getElementById("live-indicator").textContent = "● Dispatching command...";
+    } else if (msg.method === "ui/notifications/tool-result") {
+      const sc = msg.params?.structuredContent;
+      if (sc && !state.deleting) updateFromSnapshot(sc);
+    } else if (msg.method === "ui/notifications/host-context-changed") {
+      applyThemeVars(msg.params?.styles?.variables);
+    } else if (msg.method === "ping" && msg.id !== undefined) {
+      window.parent.postMessage({ jsonrpc: "2.0", id: msg.id, result: {} }, "*");
+    }
+  });
+
+  function updateFromSnapshot(snap) {
+    if (Array.isArray(snap.tasks)) state.tasks = snap.tasks;
+    if (Object.prototype.hasOwnProperty.call(snap, "selectedTask")) {
+      state.selectedTask = snap.selectedTask || null;
+      state.selectedTaskId = snap.selectedTask?.task_id || null;
+    }
+    if (Array.isArray(snap.events)) state.events = snap.events;
+    if (typeof snap.diff === "string") state.diff = snap.diff;
+    if (Array.isArray(snap.health) && snap.health.length) state.health = snap.health;
+    renderAll();
+  }
+
+  function renderTaskList(items) {
+    const groups = new Map();
+    for (const item of items) {
+      const agent = item.agent || "unknown";
+      if (!groups.has(agent)) groups.set(agent, []);
+      groups.get(agent).push(item);
+    }
+    const listEl = document.getElementById("task-list");
+    const disabled = state.deleting ? "disabled" : "";
+    listEl.innerHTML = [...groups].map(([agent, tasks]) => {
+      const collapsed = state.collapsedAgents.has(agent);
+      const running = tasks.filter((item) => item.status === "running").length;
+      return `<section class="agent-group">
+        <div class="agent-group-header">
+          <button class="agent-group-toggle" data-agent="${esc(agent)}" aria-expanded="${!collapsed}">
+            <span>${collapsed ? "▸" : "▾"}</span>
+            <span class="agent-badge ${esc(agent)}">${esc(agent)}</span>
+            <span class="agent-group-count">${tasks.length} 个任务</span>
+            ${running ? `<span class="agent-group-running">运行中 ${running}</span>` : ""}
+          </button>
+          <button class="btn task-action agent-clean" data-agent="${esc(agent)}" ${disabled} title="清理该 Agent 的所有已结束任务">🧹 清理</button>
+        </div>
+        ${collapsed ? "" : tasks.map((item) => {
+          const active = item.task_id === state.selectedTaskId ? "active" : "";
+          const title = item.title || (item.prompt || "").replace(/\s+/g, " ").slice(0, 56);
+          return `<div class="task-item ${active}" data-id="${esc(item.task_id)}">
+            <button class="btn task-action task-delete" data-id="${esc(item.task_id)}" ${disabled} title="删除此任务" aria-label="删除任务 ${esc(title)}">🗑️</button>
+            <div class="task-row-top"><span class="status-badge ${esc(item.status)}">${esc(item.status)}</span></div>
+            <div class="task-snippet">${esc(title)}</div>
+            <div class="task-id-sub">${esc(item.task_id)} · turns: ${(item.turns || []).length || 1}</div>
+          </div>`;
+        }).join("")}
+      </section>`;
+    }).join("") || `<div style="padding:14px;color:var(--text-secondary)">暂无匹配任务</div>`;
+    listEl.querySelectorAll(".agent-group-toggle").forEach((el) => {
+      el.addEventListener("click", () => {
+        const agent = el.dataset.agent;
+        if (state.collapsedAgents.has(agent)) state.collapsedAgents.delete(agent);
+        else state.collapsedAgents.add(agent);
+        renderAll();
+      });
+    });
+    listEl.querySelectorAll(".agent-clean").forEach((el) => {
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        deleteTasks({ clean_finished: true, agent: el.dataset.agent });
+      });
+    });
+    listEl.querySelectorAll(".task-delete").forEach((el) => {
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        deleteTasks({ task_id: el.dataset.id });
+      });
+    });
+    listEl.querySelectorAll(".task-item").forEach((el) => {
+      el.addEventListener("click", () => {
+        if (state.deleting) return;
+        state.selectedTaskId = el.dataset.id;
+        refreshTask();
+      });
+    });
+    document.getElementById("clean-tasks-btn").disabled = state.deleting;
+    const notice = document.getElementById("task-notice");
+    notice.textContent = state.notice;
+    notice.classList.toggle("error", state.noticeError);
+  }
+
+  async function deleteTasks(args) {
+    if (state.deleting) return;
+    state.deleting = true;
+    ++state.refreshVersion; // Discard snapshots requested before this deletion.
+    state.noticeError = false;
+    state.notice = args.clean_finished ? "正在清理陈旧任务…" : "正在删除任务…";
+    renderAll();
+    try {
+      const response = await sendRpc("tools/call", { name: "delete_agent_task", arguments: args });
+      if (response?.isError) throw new Error(response.content?.map((item) => item.text || "").join("\n") || "删除失败");
+      const result = response?.structuredContent;
+      if (!result || !Array.isArray(result.tasks)) throw new Error("未收到最新任务列表");
+      const previousId = state.selectedTaskId;
+      state.tasks = result.tasks || [];
+      const next = state.tasks.find((item) => item.task_id === previousId) || state.tasks[0] || null;
+      state.selectedTaskId = next?.task_id || null;
+      if (previousId !== state.selectedTaskId || !next) {
+        state.selectedTask = next;
+        state.events = [];
+        state.diff = "";
+
+      }
+      const count = (result.deleted || []).length;
+      state.notice = args.clean_finished
+        ? `已清理 ${count} 个${args.agent && args.agent !== "all" ? args.agent + " 的" : ""}陈旧任务，运行中的任务已保留。`
+        : (count ? "任务已永久删除。" : "任务已不存在，列表已刷新。");
+    } catch (error) {
+      state.noticeError = true;
+      state.notice = `操作失败：${error.message || String(error)}`;
+    } finally {
+      state.deleting = false;
+      renderAll();
+      await refreshTask();
+    }
+  }
+
+  document.getElementById("clean-tasks-btn").addEventListener("click", () => {
+    deleteTasks({ clean_finished: true, agent: "all" });
+  });
+
+  async function refreshTask(taskId) {
+    if (state.deleting) return;
+    const version = ++state.refreshVersion;
+    try {
+      const res = await sendRpc("tools/call", {
+        name: "inspect_agent_task",
+        arguments: {
+          task_id: taskId || state.selectedTaskId || undefined,
+          include_health: state.health.length === 0,
+        },
+      });
+      if (!state.deleting && version === state.refreshVersion && res?.structuredContent) updateFromSnapshot(res.structuredContent);
+    } catch (_) {}
+  }
+
+  function renderAll() {
+    const ind = document.getElementById("live-indicator");
+    const t = state.selectedTask;
+    if (t?.status === "running") {
+      ind.innerHTML = `<span style="color:#38bdf8">● LIVE: ${esc(t.agent)} running (${esc(t.task_id)})</span>`;
+    } else {
+      ind.textContent = `● ${state.tasks.length} tasks recorded`;
+    }
+
+    const stopBtn = document.getElementById("stop-btn");
+    stopBtn.style.display = t?.status === "running" ? "inline-block" : "none";
+
+    // Health bar
+    const hb = document.getElementById("health-bar");
+    hb.innerHTML = (state.health || []).map((h) => {
+      const cls = h.available ? "ok" : "missing";
+      const icon = h.available ? "✓" : "✕";
+      return `<span class="pill ${cls}" title="${esc(h.executable || h.error || '')}">${icon} ${esc(h.agent)}</span>`;
+    }).join("");
+
+    renderTaskList(state.tasks || []);
+
+    renderActiveTab();
+  }
+
+  function renderActiveTab() {
+    const view = document.getElementById("tab-view");
+    rememberDetails(view);
+    const t = state.selectedTask;
+    if (!t) {
+      view.innerHTML = `<div style="color:var(--text-secondary);padding:20px">在左侧选择一个 Agent 任务查看指令与实时运行过程。</div>`;
+      return;
+    }
+
+    if (state.activeTab === "command") {
+      const cmdStr = Array.isArray(t.command_argv) && t.command_argv.length
+        ? t.command_argv.join(" ")
+        : `python -m agentctl run --agent ${t.agent} --sandbox ${t.sandbox} --cwd "${t.effective_cwd}"`;
+      view.innerHTML = `
+        ${commandCard(t)}
+        <div class="card">
+          <div class="card-title">主控 Agent 调度元数据 (How Antigravity Commanded ${esc(t.agent.toUpperCase())})</div>
+          <div class="kv-grid">
+            <div class="kv-item"><span>下达方 (Dispatcher)</span><code>${esc(t.dispatcher || "Antigravity Main Agent")}</code></div>
+            <div class="kv-item"><span>目标执行 Agent</span><code>${esc(t.agent)} (${esc(t.model || "default")})</code></div>
+            <div class="kv-item"><span>会话 ID (Session)</span><code>${esc(t.session_id || "initializing...")}</code></div>
+            <div class="kv-item"><span>沙箱权限 (Sandbox)</span><code>${esc(t.sandbox)}</code></div>
+            <div class="kv-item"><span>工作目录 (CWD)</span><code>${esc(t.effective_cwd)}</code></div>
+            <div class="kv-item"><span>耗时 / 状态</span><code>${esc(t.status)} (${t.duration_ms ? (t.duration_ms/1000).toFixed(1)+'s' : 'running'})</code></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">下达给 ${esc(t.agent)} 的完整指令 (Dispatched Prompt & Acceptance Criteria)</div>
+          <pre class="code-box">${esc(currentPrompt(t))}</pre>
+        </div>
+        <details class="card raw-details">
+          <summary>展开底层实际执行的 CLI 命令行（原始记录）</summary>
+          <pre class="code-box">${esc(cmdStr)}</pre>
+        </details>
+      `;
+    } else if (state.activeTab === "stream") {
+      const evHtml = (state.events || []).map((ev) => {
+        const [label, description] = eventExplanation(ev);
+        const body = ev.text || (ev.raw ? JSON.stringify(ev.raw, null, 2) : "");
+        return `
+          <div class="ev-item ${esc(ev.kind)}">
+            <div class="ev-head">
+              <span>${esc(label)}</span>
+              <span>${esc((ev.timestamp || "").slice(11, 19))}</span>
+            </div>
+            <div class="zh-description">${esc(description)}</div>
+            <details class="raw-details"><summary>展开原始事件、命令与返回内容</summary>
+              <div class="ev-body">${esc(body)}</div>
+              ${ev.text && ev.raw ? `<pre class="code-box">${esc(JSON.stringify(ev.raw, null, 2))}</pre>` : ""}
+            </details>
+          </div>
+        `;
+      }).join("");
+      view.innerHTML = `<div class="event-list">${evHtml || '<div style="color:var(--text-secondary)">等待子 Agent 输出实时事件流...</div>'}</div>`;
+    } else if (state.activeTab === "diff") {
+      view.innerHTML = `
+        <div class="card">
+          <div class="card-title">Git 变更快照 (diff.patch)</div>
+          <pre class="code-box">${esc(state.diff || "(当前工作树无未提交的 Git 变更)")}</pre>
+        </div>
+      `;
+    } else if (state.activeTab === "result") {
+      view.innerHTML = `
+        ${resultCard(t)}
+        <div class="card">
+          <div class="card-title">子 Agent 最终输出 (Final Response)</div>
+          <pre class="code-box">${esc(t.final_response || t.error || "(任务仍在运行或无最终文本输出)")}</pre>
+        </div>
+      `;
+    }
+    restoreDetails(view, t);
+  }
+
+  document.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      state.activeTab = btn.getAttribute("data-tab");
+      renderActiveTab();
+    });
+  });
+
+  document.getElementById("refresh-btn").addEventListener("click", () => refreshTask());
+  document.getElementById("stop-btn").addEventListener("click", async () => {
+    if (!state.selectedTaskId) return;
+    await sendRpc("tools/call", {
+      name: "stop_agent_task",
+      arguments: { task_id: state.selectedTaskId },
+    });
+    refreshTask(state.selectedTaskId);
+  });
+
+  // Initialize SEP-1865 MCP App handshake
+  (async () => {
+    try {
+      const initRes = await sendRpc("ui/initialize", {
+        protocolVersion: "2025-03-26",
+        appInfo: { name: "Agent Host", version: "1.0.0" },
+        appCapabilities: {},
+      });
+      state.connected = true;
+      applyThemeVars(initRes?.hostContext?.styles?.variables);
+      sendNotification("ui/notifications/initialized", {});
+      refreshTask();
+    } catch (_) {
+      // Fallback if opened outside MCP App iframe
+    }
+  })();
+
+  // Auto-poll every 1.5s while a task is running
+  setInterval(() => {
+    if (state.connected && state.selectedTask?.status === "running") {
+      refreshTask(state.selectedTaskId);
+    }
+  }, 1500);
+})();
+</script>
+</body>
+</html>
